@@ -1,5 +1,5 @@
 // Bump CACHE_NAME on every deploy that changes cached files, so old caches get cleared.
-var CACHE_NAME = "lidl-store-locator-v1";
+var CACHE_NAME = "lidl-store-locator-v2";
 var APP_SHELL = [
   "./",
   "./index.html",
