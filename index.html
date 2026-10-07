@@ -288,6 +288,8 @@
   tbody tr:last-child { border-bottom: none; }
   tbody tr:hover { background: var(--accent-2-soft); }
   tbody tr.is-hidden { display: none; }
+  tbody tr.is-exact { background: var(--accent-2-soft); box-shadow: inset 4px 0 0 var(--accent-2); }
+  tbody tr.is-exact td.col-id { font-weight: 700; color: var(--accent-2); }
 
   td {
     padding: 0.75rem 0.9rem;
@@ -390,6 +392,8 @@
   }
 
   @media (max-width: 700px) {
+    tbody tr.is-exact { box-shadow: none; border: 2px solid var(--accent-2) !important; }
+    tbody tr.is-exact td.col-id { font-size: 0.85rem; }
     .masthead h1 { font-size: 1.4rem; }
 
     .table-shell {
@@ -516,7 +520,7 @@
   <div class="controls">
     <div class="search-wrap">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input id="search" type="text" placeholder="Search by store, town or postcode…" autocomplete="off" />
+      <input id="search" type="text" placeholder="Store number, town or postcode…" autocomplete="off" enterkeyhint="search" />
     </div>
     <select id="rdc-filter" aria-label="Filter by distribution centre">
       <option value="">All RDCs</option>
@@ -588,6 +592,7 @@
     var tr = document.createElement("tr");
     tr.dataset.haystack = (store.name + " " + store.address + " " + store.rdc + " " + store.id).toLowerCase();
     tr.dataset.rdc = store.rdc;
+    tr.dataset.id = String(store.id);
     tr.dataset.nightshift = isNightShift ? "yes" : "no";
 
     var tdId = document.createElement("td");
@@ -642,19 +647,58 @@
 
   statTotal.textContent = data.length;
 
+  // A query that is just a store number ("270", "GB270", "store 270", "#0270")
+  // is treated as a store-number lookup, not a free-text search.
+  function parseStoreNumber(q) {
+    var m = q.replace(/[\s.:#-]+/g, "").match(/^(?:gb|store|ba|no)?0*(\d{1,5})$/);
+    return m ? m[1] : null;
+  }
+
+  var currentOrder = rows;
+  function setOrder(order) {
+    if (order === currentOrder) return;
+    var frag = document.createDocumentFragment();
+    order.forEach(function (tr) { frag.appendChild(tr); });
+    tbody.appendChild(frag);
+    currentOrder = order;
+  }
+
   function applyFilters() {
     var q = searchInput.value.trim().toLowerCase();
+    var num = parseStoreNumber(q);
     var rdc = rdcSelect.value;
     var nightOnly = nightFilter.checked;
     var visible = 0;
+    var exactRow = null;
     rows.forEach(function (tr) {
-      var matchesQ = !q || tr.dataset.haystack.indexOf(q) !== -1;
+      var matchesQ;
+      if (num) {
+        // Store-number lookup: only match store numbers starting with what was typed,
+        // never house numbers inside addresses.
+        matchesQ = tr.dataset.id.indexOf(num) === 0;
+      } else {
+        matchesQ = !q || tr.dataset.haystack.indexOf(q) !== -1;
+      }
       var matchesRdc = !rdc || tr.dataset.rdc === rdc;
       var matchesNight = !nightOnly || tr.dataset.nightshift === "yes";
       var show = matchesQ && matchesRdc && matchesNight;
+      var isExact = show && !!num && tr.dataset.id === num;
+      if (isExact) exactRow = tr;
       tr.classList.toggle("is-hidden", !show);
+      tr.classList.toggle("is-exact", isExact);
       if (show) visible++;
     });
+
+    // Number lookups: exact store first, then the rest in number order.
+    if (num) {
+      setOrder(rows.slice().sort(function (a, b) {
+        if (a === exactRow) return -1;
+        if (b === exactRow) return 1;
+        return Number(a.dataset.id) - Number(b.dataset.id);
+      }));
+    } else {
+      setOrder(rows);
+    }
     statCount.textContent = visible;
     var isEmpty = visible === 0;
     emptyState.classList.toggle("is-visible", isEmpty);
